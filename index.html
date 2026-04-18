@@ -367,6 +367,24 @@
     margin-bottom: 2px;
   }
 
+  .suggestion.no-results {
+    cursor: default;
+    background: var(--bg-deep);
+  }
+  .suggestion.no-results:hover { background: var(--bg-deep); color: var(--ink-soft); }
+  .suggestion.no-results strong { color: var(--ink-soft); font-style: italic; font-family: 'Fraunces', serif; font-weight: 500; }
+  .suggestion.no-results span { font-size: 12px; color: var(--ink-faint); }
+
+  .suggestion.add-as-is {
+    background: rgba(180, 67, 42, 0.04);
+    border-top: 1px solid var(--accent-soft);
+  }
+  .suggestion.add-as-is:hover {
+    background: rgba(180, 67, 42, 0.1);
+  }
+  .suggestion.add-as-is strong { color: var(--accent); }
+  .suggestion.add-as-is span { font-size: 12px; color: var(--ink-faint); }
+
   .loading-indicator {
     position: absolute;
     right: 110px;
@@ -914,6 +932,207 @@
     color: var(--ink-soft);
   }
 
+  footer a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  footer a:hover { border-bottom-color: var(--accent); }
+
+  /* ===== Settings modal ===== */
+  .settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(42, 31, 23, 0.5);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+    animation: fadeIn 0.2s ease-out;
+  }
+  .settings-overlay.shown { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .settings-panel {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    box-shadow: 0 20px 60px rgba(42, 31, 23, 0.25);
+    max-width: 560px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 36px 36px 28px;
+    position: relative;
+    animation: slideUpIn 0.3s ease-out;
+  }
+  @keyframes slideUpIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .settings-panel h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .settings-panel h3 em { font-style: italic; color: var(--accent); }
+
+  .settings-panel .sub {
+    color: var(--ink-soft);
+    font-size: 14px;
+    margin-bottom: 24px;
+    line-height: 1.55;
+  }
+
+  .settings-panel .close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 4px 10px;
+    line-height: 1;
+    font-family: serif;
+  }
+  .settings-panel .close:hover { color: var(--accent); }
+
+  .settings-panel label {
+    display: block;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  .settings-panel input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-family: 'JetBrains Mono', Menlo, Consolas, monospace;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    margin-bottom: 16px;
+  }
+  .settings-panel input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: #fff;
+  }
+
+  .settings-status {
+    font-size: 13px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .settings-status.ok {
+    background: rgba(90, 122, 62, 0.08);
+    color: var(--ok);
+    border-left: 3px solid var(--ok);
+  }
+  .settings-status.bad {
+    background: rgba(180, 67, 42, 0.08);
+    color: var(--accent-deep);
+    border-left: 3px solid var(--accent);
+  }
+  .settings-status.muted {
+    background: var(--bg);
+    color: var(--ink-faint);
+    border-left: 3px solid var(--line);
+  }
+
+  .settings-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+  .settings-buttons button {
+    padding: 12px 20px;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+  }
+  .settings-buttons .save-btn {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .settings-buttons .save-btn:hover { background: var(--accent); }
+  .settings-buttons .remove-btn {
+    background: transparent;
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+  }
+  .settings-buttons .remove-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .setup-guide {
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+
+  .setup-guide h4 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 16px;
+    font-style: italic;
+    margin-bottom: 10px;
+    color: var(--ink);
+  }
+
+  .setup-guide ol {
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.7;
+  }
+  .setup-guide ol li { margin-bottom: 4px; }
+  .setup-guide ol code {
+    background: var(--bg);
+    padding: 1px 6px;
+    font-family: 'JetBrains Mono', Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--accent-deep);
+    border: 1px solid var(--line-soft);
+  }
+  .setup-guide a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent-soft);
+  }
+  .setup-guide a:hover { border-bottom-color: var(--accent); }
+
+  .setup-guide .costs {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--bg);
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
   /* ===== Responsive ===== */
   @media (max-width: 860px) {
     .page { padding: 28px 20px 60px; }
@@ -1061,10 +1280,44 @@
   </section>
 
   <footer>
-    <div>Made with care for two. Uses <em>OpenStreetMap</em> &amp; <em>OSRM</em>.</div>
-    <div>Hand it off to <em>Google Maps</em> when you're ready to drive.</div>
+    <div>Made with care for two. Uses <em id="search-provider-label">OpenStreetMap</em> &amp; <em>OSRM</em>.</div>
+    <div><a id="open-settings">⚙ Settings</a> &nbsp;·&nbsp; Hand it off to <em>Google Maps</em> when you're ready to drive.</div>
   </footer>
 
+</div>
+
+<!-- Settings modal -->
+<div class="settings-overlay" id="settings-overlay">
+  <div class="settings-panel" id="settings-panel">
+    <button class="close" id="close-settings" aria-label="Close settings">×</button>
+    <h3>Settings &amp; <em>accuracy</em></h3>
+    <p class="sub">For exact pin accuracy and better suggestions (especially in places OpenStreetMap doesn't cover well), you can plug in your own Google Maps API key. It's stored only in your browser — never sent anywhere except to Google.</p>
+
+    <label for="api-key-input">Google Maps API key</label>
+    <input type="text" id="api-key-input" placeholder="AIzaSy…" spellcheck="false" />
+
+    <div class="settings-status muted" id="settings-status">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>No key set — using OpenStreetMap.</span>
+    </div>
+
+    <div class="settings-buttons">
+      <button class="save-btn" id="save-key-btn">Save key</button>
+      <button class="remove-btn" id="remove-key-btn">Remove</button>
+    </div>
+
+    <div class="setup-guide">
+      <h4>How to get a Google Maps API key</h4>
+      <ol>
+        <li>Go to <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" rel="noopener">Google Maps Platform</a> and create a project (or pick one you have).</li>
+        <li>Enable both <code>Places API (New)</code> and <code>Maps JavaScript API</code> in the API library.</li>
+        <li>Under <strong>Credentials</strong>, create an API key.</li>
+        <li>Click the key → <strong>Application restrictions</strong> → <strong>Websites</strong> → add your site (e.g. <code>https://yourname.github.io/*</code>). This locks the key to your domain so no one else can use it.</li>
+        <li>Paste the key above and hit <strong>Save key</strong>.</li>
+      </ol>
+      <div class="costs">Google gives a generous monthly credit that typically covers personal use for free. Autocomplete uses session tokens so a full search-and-pick counts as one billed session, not one per keystroke.</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1120,6 +1373,228 @@
     $('today-date').textContent = d.toLocaleDateString(undefined, opts);
   })();
 
+  // ---------- Google Places (optional) ----------
+  // When the user provides their own Google Maps API key, we use Google
+  // Places Autocomplete + Place Details for search. This yields:
+  //   (a) much better coverage (malls, shops, small businesses, etc.)
+  //   (b) Place IDs, which let us pass exact venue targets to Google Maps
+  //       URLs via `destination_place_id=ChIJ...`, fixing the pin accuracy
+  //       issue entirely.
+  // The key is stored in localStorage only. Google's per-key HTTP-referrer
+  // restrictions (set in the Cloud Console) are what keep it safe on
+  // a public site.
+
+  const KEY_STORAGE = 'petal.googleApiKey';
+
+  const googleSearch = {
+    getKey() {
+      try { return localStorage.getItem(KEY_STORAGE) || ''; } catch (_) { return ''; }
+    },
+    setKey(k) {
+      try { localStorage.setItem(KEY_STORAGE, k); } catch (_) {}
+    },
+    clearKey() {
+      try { localStorage.removeItem(KEY_STORAGE); } catch (_) {}
+    },
+    isActive() {
+      return !!this.getKey();
+    },
+    // Per-session token groups many autocomplete calls + one Details call
+    // into a single billed session. We generate a new one after each pick.
+    _sessionToken: null,
+    _newSession() {
+      // RFC4122 v4 UUID
+      this._sessionToken = ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+      );
+      return this._sessionToken;
+    },
+    sessionToken() {
+      return this._sessionToken || this._newSession();
+    },
+    endSession() {
+      this._sessionToken = null;
+    },
+
+    async autocomplete(q) {
+      const key = this.getKey();
+      if (!key) throw new Error('No Google API key configured');
+      const body = {
+        input: q,
+        sessionToken: this.sessionToken(),
+      };
+      if (searchBias) {
+        body.locationBias = {
+          circle: {
+            center: { latitude: searchBias.lat, longitude: searchBias.lon },
+            radius: 50000, // 50km — metro-area scope
+          },
+        };
+      }
+      const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': key,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Google Places autocomplete HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const sugs = data.suggestions || [];
+      // Normalize to our common item shape. We don't have lat/lon yet — only
+      // after the Details call. Store placeId so we can fetch later.
+      return sugs
+        .filter(s => s.placePrediction)
+        .map(s => {
+          const p = s.placePrediction;
+          const primary = p.structuredFormat?.mainText?.text || p.text?.text || 'Unknown';
+          const secondary = p.structuredFormat?.secondaryText?.text || '';
+          return {
+            // Common shape used by the rest of the app. lat/lon are placeholders;
+            // we'll fetch real coords in fetchDetails() when the user picks one.
+            display_name: [primary, secondary].filter(Boolean).join(', '),
+            lat: null,
+            lon: null,
+            _primary: primary,
+            _addr: secondary,
+            _placeId: p.placeId,
+            _source: 'google',
+          };
+        });
+    },
+
+    async fetchDetails(placeId) {
+      const key = this.getKey();
+      if (!key) throw new Error('No Google API key configured');
+      const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(this.sessionToken())}`;
+      const res = await fetch(url, {
+        headers: {
+          'X-Goog-Api-Key': key,
+          'X-Goog-FieldMask': 'id,displayName,formattedAddress,location',
+        },
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Google Places details HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      // End the session; next autocomplete starts a new one.
+      this.endSession();
+      return {
+        placeId: data.id,
+        name: data.displayName?.text || 'Place',
+        addr: data.formattedAddress || '',
+        lat: data.location?.latitude,
+        lon: data.location?.longitude,
+      };
+    },
+
+    // Test a candidate key by making a tiny autocomplete request.
+    // Returns { ok: true } or { ok: false, message }.
+    async validateKey(candidateKey) {
+      try {
+        const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': candidateKey,
+          },
+          body: JSON.stringify({ input: 'test', sessionToken: '00000000-0000-4000-8000-000000000000' }),
+        });
+        if (res.ok) return { ok: true };
+        const text = await res.text();
+        // Parse Google's error shape if present
+        try {
+          const j = JSON.parse(text);
+          return { ok: false, message: j.error?.message || `HTTP ${res.status}` };
+        } catch (_) {
+          return { ok: false, message: `HTTP ${res.status}: ${text.slice(0, 140)}` };
+        }
+      } catch (err) {
+        return { ok: false, message: err.message };
+      }
+    },
+  };
+
+  // ---------- Settings modal wiring ----------
+  const settingsOverlay = $('settings-overlay');
+  const apiKeyInput = $('api-key-input');
+  const settingsStatus = $('settings-status');
+  const providerLabel = $('search-provider-label');
+
+  function refreshProviderLabel() {
+    if (googleSearch.isActive()) {
+      providerLabel.textContent = 'Google Places';
+    } else {
+      providerLabel.textContent = 'OpenStreetMap';
+    }
+  }
+
+  function setSettingsStatus(kind, message) {
+    // kind: 'ok' | 'bad' | 'muted'
+    settingsStatus.className = 'settings-status ' + kind;
+    const icons = {
+      ok: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+      bad: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+      muted: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+    };
+    settingsStatus.innerHTML = `${icons[kind] || icons.muted}<span>${escapeHtml(message)}</span>`;
+  }
+
+  function openSettings() {
+    apiKeyInput.value = googleSearch.getKey();
+    if (googleSearch.isActive()) {
+      setSettingsStatus('ok', 'Google Places is active. Exact pins and richer suggestions.');
+    } else {
+      setSettingsStatus('muted', 'No key set — using OpenStreetMap.');
+    }
+    settingsOverlay.classList.add('shown');
+  }
+
+  function closeSettings() {
+    settingsOverlay.classList.remove('shown');
+  }
+
+  $('open-settings').addEventListener('click', (e) => {
+    e.preventDefault();
+    openSettings();
+  });
+  $('close-settings').addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) closeSettings();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settingsOverlay.classList.contains('shown')) closeSettings();
+  });
+
+  $('save-key-btn').addEventListener('click', async () => {
+    const candidate = apiKeyInput.value.trim();
+    if (!candidate) {
+      setSettingsStatus('bad', "Paste your API key first.");
+      return;
+    }
+    setSettingsStatus('muted', 'Testing the key…');
+    const result = await googleSearch.validateKey(candidate);
+    if (result.ok) {
+      googleSearch.setKey(candidate);
+      setSettingsStatus('ok', 'Key saved and working. Google Places is now active.');
+      refreshProviderLabel();
+    } else {
+      setSettingsStatus('bad', `Key didn't work: ${result.message}`);
+    }
+  });
+
+  $('remove-key-btn').addEventListener('click', () => {
+    googleSearch.clearKey();
+    apiKeyInput.value = '';
+    setSettingsStatus('muted', 'Key removed. Back to OpenStreetMap.');
+    refreshProviderLabel();
+  });
+
   // ---------- Place search ----------
   // Primary: Photon (Komoot) — CORS-friendly, no key, no referer issues.
   // Fallback: Nominatim (OpenStreetMap) — same data source but pickier about CORS.
@@ -1136,6 +1611,19 @@
   let searchBias = null; // { lat, lon, label }
 
   async function searchPlaces(q) {
+    // If the user has configured a Google API key, use Google Places.
+    // It has much better coverage and returns Place IDs for exact routing.
+    if (googleSearch.isActive()) {
+      try {
+        const items = await googleSearch.autocomplete(q);
+        return items;
+      } catch (err) {
+        console.warn('Google Places search failed, falling back to OSM:', err.message);
+        // Fall through to Photon/Nominatim — don't strand the user if Google
+        // has a transient issue.
+      }
+    }
+
     // Try Photon first — supports lat/lon bias directly
     try {
       const params = new URLSearchParams({ q, limit: '8' });
@@ -1261,10 +1749,25 @@
     return { primary, addr };
   }
 
-  function renderSuggestions(items) {
+  function renderSuggestions(items, originalQuery) {
     currentSuggestions = items;
     highlightedIndex = -1;
     if (!items || items.length === 0) {
+      // Zero results — offer to add as raw text (inline, not a confirm dialog)
+      if (originalQuery && originalQuery.length >= 2) {
+        suggestionsEl.innerHTML = `
+          <div class="suggestion no-results">
+            <strong>No matches for "${escapeHtml(originalQuery)}"</strong>
+            <span>OpenStreetMap doesn't have this place. You can add it anyway — Google Maps will find the exact location when you open your route.</span>
+          </div>
+          <div class="suggestion add-as-is" data-raw="${escapeHtml(originalQuery)}">
+            <strong>+ Add "${escapeHtml(originalQuery)}" as-is</strong>
+            <span>Travel-time estimate for this leg will be approximate.</span>
+          </div>
+        `;
+        suggestionsEl.classList.add('active');
+        return;
+      }
       suggestionsEl.classList.remove('active');
       suggestionsEl.innerHTML = '';
       return;
@@ -1301,7 +1804,7 @@
         const items = await searchPlaces(q);
         if (q !== activeQuery) return; // stale
         loadingIndicator.classList.remove('active');
-        renderSuggestions(items);
+        renderSuggestions(items, q);
         hideError();
       } catch (err) {
         loadingIndicator.classList.remove('active');
@@ -1348,16 +1851,73 @@
   }
 
   suggestionsEl.addEventListener('click', (e) => {
+    // Handle the "add as-is" option (inline raw-text fallback)
+    const addAsIs = e.target.closest('.add-as-is');
+    if (addAsIs) {
+      const raw = addAsIs.dataset.raw;
+      if (raw) addRawTextStop(raw);
+      return;
+    }
     const el = e.target.closest('.suggestion');
-    if (!el) return;
+    if (!el || el.classList.contains('no-results')) return;
     const idx = parseInt(el.dataset.index, 10);
-    pickSuggestion(idx);
+    if (!isNaN(idx)) pickSuggestion(idx);
   });
 
-  function pickSuggestion(i) {
+  function addRawTextStop(q) {
+    if (!searchBias) {
+      showError(`Can't add "${q}" — your approximate location isn't known yet, so we can't estimate travel times. Try again in a moment, or search for a more specific query.`);
+      return;
+    }
+    addStop({
+      name: q,
+      addr: 'Will be resolved by Google Maps',
+      lat: searchBias.lat,
+      lon: searchBias.lon,
+      approximate: true,
+      rawQuery: q,
+    });
+    input.value = '';
+    pendingPick = null;
+    addBtn.disabled = true;
+    renderSuggestions([]);
+    input.focus();
+  }
+
+  async function pickSuggestion(i) {
     const item = currentSuggestions[i];
     if (!item) return;
     const { primary, addr } = formatSuggestion(item);
+
+    // Google path: we have a placeId but no coordinates yet. Fetch details
+    // to get the exact location. Also keep the placeId so the route handoff
+    // to Google Maps can use `destination_place_id=...` for pin-accurate routing.
+    if (item._source === 'google' && item._placeId) {
+      input.value = primary;
+      renderSuggestions([]);
+      loadingIndicator.classList.add('active');
+      try {
+        const details = await googleSearch.fetchDetails(item._placeId);
+        pendingPick = {
+          name: details.name || primary,
+          addr: details.addr || addr,
+          lat: details.lat,
+          lon: details.lon,
+          placeId: details.placeId,
+        };
+        input.value = pendingPick.name;
+        loadingIndicator.classList.remove('active');
+        addBtn.disabled = false;
+        addBtn.focus();
+      } catch (err) {
+        loadingIndicator.classList.remove('active');
+        console.error('Place details fetch failed:', err);
+        showError(`Couldn't fetch place details: ${err.message}. Try picking again or remove the Google key in settings.`);
+      }
+      return;
+    }
+
+    // OSM path — coordinates were included with the search result
     pendingPick = {
       name: primary,
       addr,
@@ -1387,18 +1947,31 @@
       try {
         loadingIndicator.classList.add('active');
         const items = await searchPlaces(q);
-        loadingIndicator.classList.remove('active');
         if (items.length === 0) {
-          // Zero results — offer to add as raw text
-          offerRawTextAdd(q);
+          loadingIndicator.classList.remove('active');
+          // Zero results — show the inline "add as-is" option in the dropdown
+          // so the user can choose explicitly rather than pressing Add again.
+          renderSuggestions([], q);
           return;
         }
         const top = items[0];
-        const { primary, addr } = formatSuggestion(top);
-        stop = {
-          name: primary, addr,
-          lat: parseFloat(top.lat), lon: parseFloat(top.lon),
-        };
+        if (top._source === 'google' && top._placeId) {
+          // Google autocomplete doesn't include coords; fetch details.
+          const details = await googleSearch.fetchDetails(top._placeId);
+          loadingIndicator.classList.remove('active');
+          stop = {
+            name: details.name, addr: details.addr,
+            lat: details.lat, lon: details.lon,
+            placeId: details.placeId,
+          };
+        } else {
+          loadingIndicator.classList.remove('active');
+          const { primary, addr } = formatSuggestion(top);
+          stop = {
+            name: primary, addr,
+            lat: parseFloat(top.lat), lon: parseFloat(top.lon),
+          };
+        }
       } catch (err) {
         loadingIndicator.classList.remove('active');
         showError('Had trouble reaching the search service. Please try again.');
@@ -1413,43 +1986,14 @@
     input.focus();
   });
 
-  function addStop({name, addr, lat, lon, approximate, rawQuery}) {
+  function addStop({name, addr, lat, lon, approximate, rawQuery, placeId}) {
     state.stops.push({
       id: Math.random().toString(36).slice(2),
-      name, addr, lat, lon, approximate, rawQuery,
+      name, addr, lat, lon, approximate, rawQuery, placeId,
     });
     renderStops();
     // Hide any previous result since stops have changed
     hideResult();
-  }
-
-  // When geocoding finds nothing, offer to add the raw query.
-  // We use the user's IP-located area as a proxy coordinate for the
-  // travel-time matrix, and flag it so the UI can warn the user.
-  // When opening Google Maps, we'll pass the raw query text so Google's
-  // own (much better) search can resolve it to the real location.
-  function offerRawTextAdd(q) {
-    if (!searchBias) {
-      showError(`No results for "${q}". Add a city name to the query, or make sure your internet's working.`);
-      return;
-    }
-    const ok = confirm(
-      `No mapping data found for "${q}". \n\nYou can still add it as a stop — Google Maps will resolve the exact location when you open the route. The travel-time estimate for this leg will be approximate.\n\nAdd it anyway?`
-    );
-    if (!ok) return;
-    addStop({
-      name: q,
-      addr: 'Will be resolved by Google Maps',
-      lat: searchBias.lat,
-      lon: searchBias.lon,
-      approximate: true,
-      rawQuery: q,
-    });
-    input.value = '';
-    pendingPick = null;
-    addBtn.disabled = true;
-    renderSuggestions([]);
-    input.focus();
   }
 
   function removeStop(id) {
@@ -1810,7 +2354,7 @@
     let points = state.stops.map(s => ({ lat: s.lat, lon: s.lon }));
     let labels = state.stops.map(s => ({
       name: s.name, addr: s.addr, lat: s.lat, lon: s.lon,
-      approximate: s.approximate, rawQuery: s.rawQuery,
+      approximate: s.approximate, rawQuery: s.rawQuery, placeId: s.placeId,
     }));
     let startIdx = 0;
 
@@ -1996,43 +2540,47 @@
   function buildGoogleMapsUrl(r) {
     // https://www.google.com/maps/dir/?api=1&origin=...&destination=...&waypoints=a|b|c&travelmode=driving
     //
-    // Coordinates get snapped to the nearest routable road, which can be
-    // 50-200m off from the actual place. Passing place names (or addresses)
-    // lets Google's own geocoder resolve to the correct pin — much more
-    // accurate for businesses, malls, tourist spots, etc.
-    //
-    // Precedence:
-    // 1. rawQuery (for stops we couldn't geocode; Google figures it out)
-    // 2. name + addr (gives Google enough context to find the exact place)
-    // 3. isStart with no name → coordinates (current-location fallback)
+    // Accuracy hierarchy:
+    // 1. Place ID (from Google Places) — exact venue pin. Origin/destination
+    //    use the dedicated `_place_id` params; waypoints use the inline
+    //    `place_id:ChIJ...` syntax in the waypoints string.
+    // 2. Raw query text (un-geocodable stops) — Google's own geocoder resolves.
+    // 3. Name + address text (OSM-geocoded stops) — Google re-geocodes for
+    //    better pin placement than raw OSM coordinates would give.
+    // 4. Coordinates — only for user's current-location origin. Coordinates
+    //    passed as the endpoint get snapped to the nearest routable road,
+    //    which is why we avoid them for named stops.
     const pts = r.order.map(i => r.labels[i]);
-    const toWaypoint = (p) => {
-      if (p.isStart && !p.rawQuery) {
-        // User's current location — coords are correct
-        return `${p.lat},${p.lon}`;
-      }
-      if (p.rawQuery) {
-        // Approximate stop — let Google resolve it
-        return p.rawQuery;
-      }
-      // Geocoded stop — use name + address for Google's geocoder.
-      // This is more reliable than coordinates because named places
-      // resolve to entrance pins rather than nearest-road snap points.
-      const textParts = [p.name, p.addr].filter(Boolean);
-      return textParts.join(', ');
+
+    // Text representation of a stop (for origin, destination, or a plain
+    // waypoint). Place IDs are handled separately via distinct URL params.
+    const asText = (p) => {
+      if (p.isStart && !p.rawQuery && !p.placeId) return `${p.lat},${p.lon}`;
+      if (p.rawQuery) return p.rawQuery;
+      return [p.name, p.addr].filter(Boolean).join(', ');
     };
 
-    const origin = toWaypoint(pts[0]);
-    const destination = toWaypoint(pts[pts.length - 1]);
-    const waypointPts = pts.slice(1, -1);
-    const waypoints = waypointPts.map(toWaypoint).join('|');
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const middle = pts.slice(1, -1);
+
     const params = new URLSearchParams({
       api: '1',
-      origin,
-      destination,
+      origin: asText(first),
+      destination: asText(last),
       travelmode: r.mode === 'cycling' ? 'bicycling' : r.mode,
     });
-    if (waypoints) params.set('waypoints', waypoints);
+    if (first.placeId) params.set('origin_place_id', first.placeId);
+    if (last.placeId) params.set('destination_place_id', last.placeId);
+
+    if (middle.length > 0) {
+      const waypoints = middle.map(p => {
+        if (p.placeId) return `place_id:${p.placeId}`;
+        return asText(p);
+      }).join('|');
+      params.set('waypoints', waypoints);
+    }
+
     return `https://www.google.com/maps/dir/?${params.toString()}`;
   }
 
@@ -2051,6 +2599,7 @@
 
   // Initial render
   renderStops();
+  refreshProviderLabel();
 })();
 </script>
 
