@@ -1442,17 +1442,38 @@
           },
         };
       }
-      const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': key,
-        },
-        body: JSON.stringify(body),
-      });
+      let res;
+      try {
+        res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': key,
+          },
+          body: JSON.stringify(body),
+        });
+      } catch (netErr) {
+        // Network-level failure (offline, DNS, CORS block on misconfigured key).
+        // Tag as transient so caller can decide whether to fall back.
+        const e = new Error('Network failure reaching Google Places: ' + netErr.message);
+        e.transient = true;
+        throw e;
+      }
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Google Places autocomplete HTTP ${res.status}: ${text.slice(0, 200)}`);
+        // Extract Google's structured error message if present
+        let detail = text.slice(0, 300);
+        try {
+          const j = JSON.parse(text);
+          detail = j.error?.message || detail;
+        } catch (_) {}
+        // 4xx indicates a config problem (bad key, referrer restriction,
+        // API not enabled, billing disabled). Don't silently fall back —
+        // the user needs to know their Google setup isn't working.
+        const e = new Error(`Google Places error (HTTP ${res.status}): ${detail}`);
+        e.transient = (res.status >= 500);
+        e.status = res.status;
+        throw e;
       }
       const data = await res.json();
       const sugs = data.suggestions || [];
@@ -1627,11 +1648,19 @@
     if (googleSearch.isActive()) {
       try {
         const items = await googleSearch.autocomplete(q);
+        hideError();
         return items;
       } catch (err) {
-        console.warn('Google Places search failed, falling back to OSM:', err.message);
-        // Fall through to Photon/Nominatim — don't strand the user if Google
-        // has a transient issue.
+        // Transient errors (network blip, 5xx) → silent fallback to OSM.
+        // Config errors (4xx: bad key, referrer restriction, billing, API
+        // not enabled) are surfaced so the user knows their key is broken.
+        if (err.transient) {
+          console.warn('Google Places transient error, falling back to OSM:', err.message);
+        } else {
+          showError(`Google Places rejected the request: ${err.message}. Check your key in Settings (domain restrictions, enabled APIs, billing) — using OpenStreetMap for this search.`);
+          console.error('Google Places config error:', err);
+        }
+        // Either way, fall through to OSM so the user can still get something.
       }
     }
 
@@ -1816,7 +1845,8 @@
         if (q !== activeQuery) return; // stale
         loadingIndicator.classList.remove('active');
         renderSuggestions(items, q);
-        hideError();
+        // Don't call hideError() here — searchPlaces() may have shown a
+        // Google-config warning while still falling back to OSM for results.
       } catch (err) {
         loadingIndicator.classList.remove('active');
         console.error('Search error:', err);
