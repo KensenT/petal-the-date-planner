@@ -1433,7 +1433,7 @@
       // ambiguous, so we tighten the radius so Google has stronger signal
       // to prefer nearby results. Longer queries already have enough
       // specificity that a wider metro-area radius is fine.
-      if (searchBias) {
+      if (searchBias && typeof searchBias.lat === 'number' && typeof searchBias.lon === 'number') {
         const radius = q.length <= 4 ? 20000 : 50000; // 20km vs 50km
         body.locationBias = {
           circle: {
@@ -1676,7 +1676,8 @@
     // Try Photon first — supports lat/lon bias directly
     try {
       const params = new URLSearchParams({ q, limit: '8' });
-      if (searchBias) {
+      const hasCoords = searchBias && typeof searchBias.lat === 'number' && typeof searchBias.lon === 'number';
+      if (hasCoords) {
         params.set('lat', searchBias.lat);
         params.set('lon', searchBias.lon);
         // zoom ~12 = city/metro radius; location_bias_scale low = strongly
@@ -1691,7 +1692,7 @@
       let normalized = (data.features || []).map(photonToItem).filter(Boolean);
       // Re-sort by distance to bias as a secondary boost (Photon bias alone
       // can still put a famous-but-distant match first).
-      if (searchBias && normalized.length > 0) {
+      if (hasCoords && normalized.length > 0) {
         normalized = rerankByDistance(normalized, searchBias);
       }
       if (normalized.length > 0) return normalized.slice(0, 6);
@@ -1704,7 +1705,8 @@
     const params = new URLSearchParams({
       q, format: 'json', addressdetails: '1', limit: '8',
     });
-    if (searchBias) {
+    const hasCoords = searchBias && typeof searchBias.lat === 'number' && typeof searchBias.lon === 'number';
+    if (hasCoords) {
       // Viewbox is a ~100km square around the user; bounded=0 means it's a preference, not a hard limit.
       const { lat, lon } = searchBias;
       const d = 0.8; // ~90km at equator; good enough for "same metro" bias
@@ -1715,7 +1717,7 @@
     if (!res.ok) throw new Error('Nominatim HTTP ' + res.status);
     const data = await res.json();
     let items = data.map(nominatimToItem);
-    if (searchBias && items.length > 0) items = rerankByDistance(items, searchBias);
+    if (hasCoords && items.length > 0) items = rerankByDistance(items, searchBias);
     return items.slice(0, 6);
   }
 
@@ -1915,8 +1917,12 @@
   });
 
   function addRawTextStop(q) {
-    if (!searchBias) {
-      showError(`Can't add "${q}" — your approximate location isn't known yet, so we can't estimate travel times. Try again in a moment, or search for a more specific query.`);
+    // We need a placeholder coordinate for this stop so the travel-time
+    // matrix can include it. We use the user's approximate location as the
+    // placeholder. If no coords are available (only country code), we
+    // can't compute travel times for this stop.
+    if (!searchBias || typeof searchBias.lat !== 'number' || typeof searchBias.lon !== 'number') {
+      showError(`Can't add "${q}" as-is — your approximate coordinates aren't known, so travel time for this leg can't be estimated. Try a more specific search query (e.g. add a city name), or pick from the suggestions.`);
       return;
     }
     addStop({
@@ -2151,13 +2157,42 @@
   // IP-based coarse geolocation. No permission prompt, no key.
   // Used (a) to bias search results at page load, and (b) as a fallback
   // when browser geolocation is denied or unavailable.
+  // IP-based coarse geolocation. No permission prompt, no key.
+  // Used (a) to bias search results at page load, and (b) as a fallback
+  // when browser geolocation is denied or unavailable.
+  //
+  // Strategy: try multiple providers in parallel-ish order. Country code
+  // is the most valuable signal (it enables Google's hard region filter
+  // via includedRegionCodes), so we go to lengths to get it — including
+  // a zero-network fallback using the browser's own timezone setting.
   async function ipLocate() {
-    // Try a few free, no-key, CORS-enabled services in order.
-    // Returns { lat, lon, label, countryCode }. countryCode is a
-    // lowercase ISO 3166-1 alpha-2 code (e.g. "id" for Indonesia) used
-    // for Google Places `includedRegionCodes`.
+    // Providers return { lat?, lon?, label?, countryCode? }. lat/lon are
+    // optional because country-only providers like country.is are a
+    // valuable fallback even without coords.
     const providers = [
       {
+        // Full lat/lon + country. CORS-enabled, no key.
+        name: 'freeipapi.com',
+        url: 'https://freeipapi.com/api/json',
+        parse: d => ({
+          lat: d.latitude, lon: d.longitude,
+          label: [d.cityName, d.countryName].filter(Boolean).join(', '),
+          countryCode: (d.countryCode || '').toLowerCase() || null,
+        }),
+      },
+      {
+        // Country-only. Ultra-lightweight, very reliable CORS.
+        name: 'country.is',
+        url: 'https://api.country.is/',
+        parse: d => ({
+          lat: null, lon: null, label: null,
+          countryCode: (d.country || '').toLowerCase() || null,
+        }),
+      },
+      {
+        // Full geolocation — kept as a fallback even though it sometimes
+        // blocks CORS, because it works from many origins.
+        name: 'ipapi.co',
         url: 'https://ipapi.co/json/',
         parse: d => ({
           lat: d.latitude, lon: d.longitude,
@@ -2166,6 +2201,7 @@
         }),
       },
       {
+        name: 'ipwho.is',
         url: 'https://ipwho.is/',
         parse: d => d.success ? ({
           lat: d.latitude, lon: d.longitude,
@@ -2174,16 +2210,85 @@
         }) : null,
       },
     ];
+
+    // Accumulate the best result we've gotten so far. If we get a full
+    // result (lat/lon + country), return immediately. If we only get
+    // country, keep it and try the next provider for coords.
+    let best = null;
     for (const p of providers) {
       try {
         const res = await fetch(p.url);
         if (!res.ok) continue;
         const data = await res.json();
         const loc = p.parse(data);
-        if (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number') return loc;
+        if (!loc) continue;
+        // Merge into best — later providers fill in gaps
+        best = {
+          lat: loc.lat ?? best?.lat ?? null,
+          lon: loc.lon ?? best?.lon ?? null,
+          label: loc.label ?? best?.label ?? null,
+          countryCode: loc.countryCode ?? best?.countryCode ?? null,
+        };
+        // If we have everything, stop.
+        if (typeof best.lat === 'number' && typeof best.lon === 'number' && best.countryCode) {
+          return best;
+        }
       } catch (_) { /* try next */ }
     }
-    throw new Error('All IP lookup providers failed');
+
+    // Last-resort fallback: derive country from the browser's timezone.
+    // This works even when every network provider is blocked, and costs
+    // nothing. It's not perfect (some timezones span multiple countries)
+    // but it's an excellent default for the Google region filter.
+    if (!best || !best.countryCode) {
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const cc = timezoneToCountry(tz);
+        if (cc) {
+          best = best || { lat: null, lon: null, label: null, countryCode: null };
+          best.countryCode = best.countryCode || cc;
+          if (!best.label) best.label = `${tz.replace(/_/g, ' ')} (timezone-derived)`;
+        }
+      } catch (_) { /* Intl unavailable — give up */ }
+    }
+
+    if (best) return best;
+    throw new Error('All IP lookup providers failed and timezone lookup yielded no country');
+  }
+
+  // Maps IANA timezone names to ISO 3166-1 alpha-2 country codes.
+  // Covers the major zones; sufficient for the use case of biasing Google
+  // Places searches to the right country. Source: IANA tz database mapping.
+  function timezoneToCountry(tz) {
+    if (!tz) return null;
+    const map = {
+      'Asia/Jakarta':'id','Asia/Pontianak':'id','Asia/Makassar':'id','Asia/Jayapura':'id',
+      'Asia/Singapore':'sg','Asia/Kuala_Lumpur':'my','Asia/Kuching':'my','Asia/Bangkok':'th',
+      'Asia/Ho_Chi_Minh':'vn','Asia/Saigon':'vn','Asia/Manila':'ph','Asia/Tokyo':'jp',
+      'Asia/Seoul':'kr','Asia/Shanghai':'cn','Asia/Hong_Kong':'hk','Asia/Taipei':'tw',
+      'Asia/Kolkata':'in','Asia/Calcutta':'in','Asia/Karachi':'pk','Asia/Dhaka':'bd',
+      'Asia/Colombo':'lk','Asia/Yangon':'mm','Asia/Phnom_Penh':'kh','Asia/Vientiane':'la',
+      'Asia/Dubai':'ae','Asia/Qatar':'qa','Asia/Riyadh':'sa','Asia/Tehran':'ir',
+      'Asia/Jerusalem':'il','Asia/Beirut':'lb','Asia/Istanbul':'tr','Europe/Istanbul':'tr',
+      'Australia/Sydney':'au','Australia/Melbourne':'au','Australia/Brisbane':'au',
+      'Australia/Perth':'au','Australia/Adelaide':'au','Pacific/Auckland':'nz',
+      'America/New_York':'us','America/Chicago':'us','America/Denver':'us','America/Los_Angeles':'us',
+      'America/Phoenix':'us','America/Anchorage':'us','Pacific/Honolulu':'us',
+      'America/Toronto':'ca','America/Vancouver':'ca','America/Edmonton':'ca','America/Halifax':'ca',
+      'America/Mexico_City':'mx','America/Tijuana':'mx','America/Cancun':'mx',
+      'America/Sao_Paulo':'br','America/Rio_Branco':'br','America/Bahia':'br',
+      'America/Argentina/Buenos_Aires':'ar','America/Santiago':'cl','America/Lima':'pe',
+      'America/Bogota':'co','America/Caracas':'ve',
+      'Europe/London':'gb','Europe/Dublin':'ie','Europe/Paris':'fr','Europe/Berlin':'de',
+      'Europe/Madrid':'es','Europe/Rome':'it','Europe/Amsterdam':'nl','Europe/Brussels':'be',
+      'Europe/Vienna':'at','Europe/Zurich':'ch','Europe/Stockholm':'se','Europe/Oslo':'no',
+      'Europe/Copenhagen':'dk','Europe/Helsinki':'fi','Europe/Warsaw':'pl','Europe/Prague':'cz',
+      'Europe/Budapest':'hu','Europe/Athens':'gr','Europe/Lisbon':'pt','Europe/Moscow':'ru',
+      'Europe/Kyiv':'ua','Europe/Kiev':'ua','Europe/Bucharest':'ro',
+      'Africa/Cairo':'eg','Africa/Lagos':'ng','Africa/Nairobi':'ke','Africa/Johannesburg':'za',
+      'Africa/Casablanca':'ma','Africa/Algiers':'dz','Africa/Tunis':'tn',
+    };
+    return map[tz] || null;
   }
 
   // Kick off IP geolocation in the background to bias search results.
@@ -2191,11 +2296,24 @@
     try {
       const bias = await ipLocate();
       searchBias = bias;
-      console.log('Search biased to:', bias.label || `${bias.lat}, ${bias.lon}`);
+      const hasCoords = typeof bias.lat === 'number' && typeof bias.lon === 'number';
+      console.log('[Petal] Search biased to:', {
+        countryCode: bias.countryCode,
+        hasCoords,
+        label: bias.label,
+        lat: bias.lat,
+        lon: bias.lon,
+      });
       const hintEl = document.getElementById('search-hint');
-      if (hintEl && bias.label) {
-        hintEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>Showing results near ${escapeHtml(bias.label)}`;
-        hintEl.classList.add('shown');
+      if (hintEl) {
+        const pin = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+        if (bias.label) {
+          hintEl.innerHTML = `${pin}Showing results near ${escapeHtml(bias.label)}`;
+          hintEl.classList.add('shown');
+        } else if (bias.countryCode) {
+          hintEl.innerHTML = `${pin}Showing results in ${escapeHtml(bias.countryCode.toUpperCase())}`;
+          hintEl.classList.add('shown');
+        }
       }
     } catch (err) {
       console.warn('IP geolocation unavailable, search results will not be location-biased:', err.message);
