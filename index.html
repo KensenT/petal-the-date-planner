@@ -516,6 +516,24 @@
 
   .stop .remove:hover { color: var(--accent); transform: scale(1.15); }
 
+  .approx-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    background: rgba(180, 67, 42, 0.12);
+    color: var(--accent);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+    vertical-align: 2px;
+    font-style: normal;
+  }
+
+  .stop.approx {
+    border-left: 2px solid var(--accent-soft);
+  }
+
   .stops-empty {
     text-align: center;
     padding: 40px 20px;
@@ -1164,15 +1182,26 @@
     return items.slice(0, 6);
   }
 
-  // Re-rank results with a soft preference for proximity to the user.
-  // Uses a blended score: original rank + distance penalty. This keeps
-  // exact-name matches at the top but pushes faraway duplicates down.
+  // Re-rank results with a strong preference for proximity to the user.
+  // Results within the user's metro area (≤ ~50km) are treated as clearly
+  // preferred; results further away pay a steep penalty that dominates small
+  // differences in name-match quality.
   function rerankByDistance(items, bias) {
     const scored = items.map((item, i) => {
       const dKm = haversineKm(bias, { lat: item.lat, lon: item.lon });
-      // Distance penalty: log-scaled so 10km vs 50km matters more than 5000 vs 10000km
-      const distPenalty = Math.log10(Math.max(dKm, 1)) * 1.5;
-      return { item, score: i + distPenalty };
+      let penalty;
+      if (dKm <= 50) {
+        // Very close — tiny penalty so we preserve Photon's ordering within the metro
+        penalty = dKm * 0.02;
+      } else if (dKm <= 500) {
+        // Same region — moderate penalty
+        penalty = 1 + (dKm - 50) * 0.01;
+      } else {
+        // Far away — heavy penalty. Log-scaled so 1000km and 10000km still
+        // differ, but all far results sit well below any local result.
+        penalty = 10 + Math.log10(dKm / 500) * 6;
+      }
+      return { item, score: i * 0.3 + penalty, dKm };
     });
     scored.sort((a, b) => a.score - b.score);
     return scored.map(s => s.item);
@@ -1360,7 +1389,8 @@
         const items = await searchPlaces(q);
         loadingIndicator.classList.remove('active');
         if (items.length === 0) {
-          showError(`Couldn't find a place matching "${q}". Try adding a city name.`);
+          // Zero results — offer to add as raw text
+          offerRawTextAdd(q);
           return;
         }
         const top = items[0];
@@ -1383,14 +1413,43 @@
     input.focus();
   });
 
-  function addStop({name, addr, lat, lon}) {
+  function addStop({name, addr, lat, lon, approximate, rawQuery}) {
     state.stops.push({
       id: Math.random().toString(36).slice(2),
-      name, addr, lat, lon,
+      name, addr, lat, lon, approximate, rawQuery,
     });
     renderStops();
     // Hide any previous result since stops have changed
     hideResult();
+  }
+
+  // When geocoding finds nothing, offer to add the raw query.
+  // We use the user's IP-located area as a proxy coordinate for the
+  // travel-time matrix, and flag it so the UI can warn the user.
+  // When opening Google Maps, we'll pass the raw query text so Google's
+  // own (much better) search can resolve it to the real location.
+  function offerRawTextAdd(q) {
+    if (!searchBias) {
+      showError(`No results for "${q}". Add a city name to the query, or make sure your internet's working.`);
+      return;
+    }
+    const ok = confirm(
+      `No mapping data found for "${q}". \n\nYou can still add it as a stop — Google Maps will resolve the exact location when you open the route. The travel-time estimate for this leg will be approximate.\n\nAdd it anyway?`
+    );
+    if (!ok) return;
+    addStop({
+      name: q,
+      addr: 'Will be resolved by Google Maps',
+      lat: searchBias.lat,
+      lon: searchBias.lon,
+      approximate: true,
+      rawQuery: q,
+    });
+    input.value = '';
+    pendingPick = null;
+    addBtn.disabled = true;
+    renderSuggestions([]);
+    input.focus();
   }
 
   function removeStop(id) {
@@ -1407,10 +1466,10 @@
     } else {
       stopsEmptyEl.style.display = 'none';
       stopsListEl.innerHTML = state.stops.map((s, i) => `
-        <li class="stop" data-id="${s.id}">
+        <li class="stop ${s.approximate ? 'approx' : ''}" data-id="${s.id}">
           <div class="num">${i + 1}</div>
           <div class="info">
-            <div class="name">${escapeHtml(s.name)}</div>
+            <div class="name">${escapeHtml(s.name)}${s.approximate ? ' <span class="approx-badge">approx.</span>' : ''}</div>
             ${s.addr ? `<div class="addr">${escapeHtml(s.addr)}</div>` : ''}
           </div>
           <button class="remove" data-id="${s.id}" aria-label="Remove stop">×</button>
@@ -1749,7 +1808,10 @@
 
     // Build point list. If startMode === 'current', prepend user location.
     let points = state.stops.map(s => ({ lat: s.lat, lon: s.lon }));
-    let labels = state.stops.map(s => ({ name: s.name, addr: s.addr, lat: s.lat, lon: s.lon }));
+    let labels = state.stops.map(s => ({
+      name: s.name, addr: s.addr, lat: s.lat, lon: s.lon,
+      approximate: s.approximate, rawQuery: s.rawQuery,
+    }));
     let startIdx = 0;
 
     if (startMode === 'current') {
@@ -1933,12 +1995,37 @@
 
   function buildGoogleMapsUrl(r) {
     // https://www.google.com/maps/dir/?api=1&origin=...&destination=...&waypoints=a|b|c&travelmode=driving
+    //
+    // Coordinates get snapped to the nearest routable road, which can be
+    // 50-200m off from the actual place. Passing place names (or addresses)
+    // lets Google's own geocoder resolve to the correct pin — much more
+    // accurate for businesses, malls, tourist spots, etc.
+    //
+    // Precedence:
+    // 1. rawQuery (for stops we couldn't geocode; Google figures it out)
+    // 2. name + addr (gives Google enough context to find the exact place)
+    // 3. isStart with no name → coordinates (current-location fallback)
     const pts = r.order.map(i => r.labels[i]);
-    const origin = `${pts[0].lat},${pts[0].lon}`;
-    const destPoint = pts[pts.length - 1];
-    const destination = `${destPoint.lat},${destPoint.lon}`;
+    const toWaypoint = (p) => {
+      if (p.isStart && !p.rawQuery) {
+        // User's current location — coords are correct
+        return `${p.lat},${p.lon}`;
+      }
+      if (p.rawQuery) {
+        // Approximate stop — let Google resolve it
+        return p.rawQuery;
+      }
+      // Geocoded stop — use name + address for Google's geocoder.
+      // This is more reliable than coordinates because named places
+      // resolve to entrance pins rather than nearest-road snap points.
+      const textParts = [p.name, p.addr].filter(Boolean);
+      return textParts.join(', ');
+    };
+
+    const origin = toWaypoint(pts[0]);
+    const destination = toWaypoint(pts[pts.length - 1]);
     const waypointPts = pts.slice(1, -1);
-    const waypoints = waypointPts.map(p => `${p.lat},${p.lon}`).join('|');
+    const waypoints = waypointPts.map(toWaypoint).join('|');
     const params = new URLSearchParams({
       api: '1',
       origin,
