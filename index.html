@@ -390,20 +390,47 @@
   }
 
   /* ===== Input field ===== */
+  /*
+   * Structure:
+   *   .place-input-wrap  — block, anchors suggestions dropdown
+   *     .input-row       — flex, input + Add side-by-side on desktop,
+   *                        column-stacked on mobile
+   *       .input-with-pin — position:relative, permanent container for
+   *                         the input and its pin/loading icons; this
+   *                         means the pin is ALWAYS centered on the
+   *                         input regardless of how the Add button lays out
+   *         .pin-icon    — absolute, vertically centered in the input
+   *         .place-input — the actual input
+   *         .loading-indicator — absolute, right side of input
+   *       .add-btn       — sibling of .input-with-pin in the flex row
+   */
   .place-input-wrap {
     position: relative;
     margin-bottom: 16px;
   }
 
+  .input-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  .input-with-pin {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .place-input {
     width: 100%;
-    padding: 16px 130px 16px 52px;
+    padding: 16px 42px 16px 52px;
     font-size: 16px;
     font-family: 'Inter Tight', sans-serif;
     background: var(--bg);
     border: 1px solid var(--line);
     color: var(--ink);
     transition: border-color 0.2s, background 0.2s;
+    display: block;
   }
 
   .place-input:focus {
@@ -417,7 +444,7 @@
     font-style: italic;
   }
 
-  .place-input-wrap .pin-icon {
+  .input-with-pin .pin-icon {
     position: absolute;
     left: 18px;
     top: 50%;
@@ -427,10 +454,6 @@
   }
 
   .add-btn {
-    position: absolute;
-    right: 6px;
-    top: 50%;
-    transform: translateY(-50%);
     padding: 10px 20px;
     background: var(--ink);
     color: var(--paper);
@@ -442,6 +465,8 @@
     text-transform: uppercase;
     cursor: pointer;
     transition: background 0.2s;
+    flex: 0 0 auto;
+    min-width: 90px;
   }
 
   .add-btn:hover { background: var(--accent); }
@@ -507,7 +532,7 @@
 
   .loading-indicator {
     position: absolute;
-    right: 110px;
+    right: 16px;
     top: 50%;
     transform: translateY(-50%);
     width: 14px;
@@ -1280,18 +1305,18 @@
     }
     .composer { padding: 24px 20px; }
     .place-input {
-      padding: 14px 14px 14px 44px;
+      padding: 14px 42px 14px 44px;
       font-size: 15px;
     }
+    /* On mobile, stack the Add button below the input for easier tapping */
+    .input-row {
+      flex-direction: column;
+      gap: 10px;
+    }
     .add-btn {
-      position: static;
-      transform: none;
       width: 100%;
-      margin-top: 10px;
       padding: 14px;
     }
-    .place-input-wrap { display: flex; flex-direction: column; }
-    .loading-indicator { right: 16px; }
     .stats { grid-template-columns: 1fr; }
     .stat { border-right: none; border-bottom: 1px solid var(--line); }
     .stat:last-child { border-bottom: none; }
@@ -1369,13 +1394,17 @@
     </div>
 
     <div class="place-input-wrap">
-      <svg class="pin-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 1 1 16 0z"/>
-        <circle cx="12" cy="10" r="3"/>
-      </svg>
-      <input type="text" class="place-input" id="place-input" placeholder="A restaurant, park, bookshop, bar…" autocomplete="off" spellcheck="false" />
-      <div class="loading-indicator" id="loading-indicator"></div>
-      <button class="add-btn" id="add-btn" disabled>Add</button>
+      <div class="input-row">
+        <div class="input-with-pin">
+          <svg class="pin-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 1 1 16 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+          <input type="text" class="place-input" id="place-input" placeholder="A restaurant, park, bookshop, bar…" autocomplete="off" spellcheck="false" />
+          <div class="loading-indicator" id="loading-indicator"></div>
+        </div>
+        <button class="add-btn" id="add-btn" disabled>Add</button>
+      </div>
       <div class="suggestions" id="suggestions"></div>
     </div>
 
@@ -1778,16 +1807,22 @@
   });
 
   // ---------- First-visit accuracy banner ----------
-  // Shown once to any user who hasn't configured a key and hasn't dismissed it.
-  // Stored in localStorage so it never nags a returning user.
+  // Shows once per browser unless dismissed. Even users who've configured
+  // a key see it the first time they visit — it's informational. After
+  // dismiss OR after successful key save, we persist the flag so it never
+  // shows again on that device.
   const BANNER_DISMISS_KEY = 'petal.accuracyBannerDismissed';
 
   function showAccuracyBannerIfAppropriate() {
-    // Don't show if: key already configured, or banner was previously dismissed
-    if (googleSearch.isActive()) return;
     let dismissed = false;
     try { dismissed = localStorage.getItem(BANNER_DISMISS_KEY) === '1'; } catch (_) {}
     if (dismissed) return;
+    // If the user already has a working Google key, the banner isn't
+    // useful — quietly persist the dismiss so they never see it.
+    if (googleSearch.isActive()) {
+      try { localStorage.setItem(BANNER_DISMISS_KEY, '1'); } catch (_) {}
+      return;
+    }
     $('accuracy-banner').classList.add('shown');
   }
 
@@ -2440,7 +2475,11 @@
         if (cc) {
           best = best || { lat: null, lon: null, label: null, countryCode: null };
           best.countryCode = best.countryCode || cc;
-          if (!best.label) best.label = `${tz.replace(/_/g, ' ')} (timezone-derived)`;
+          if (!best.label) {
+            // Convert "Asia/Jakarta" → "Jakarta" for a cleaner user-facing label.
+            const city = tz.split('/').pop().replace(/_/g, ' ');
+            best.label = city;
+          }
         }
       } catch (_) { /* Intl unavailable — give up */ }
     }
@@ -2979,6 +3018,7 @@
   // Initial render
   renderStops();
   refreshProviderLabel();
+  showAccuracyBannerIfAppropriate();
 
   // Personalize the tutorial's example URL to match the actual deployed site.
   // If opened via file://, fall back to the generic example so it still reads sensibly.
