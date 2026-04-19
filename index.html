@@ -923,6 +923,11 @@
     font-style: italic;
     margin-top: 4px;
   }
+  /* Neutral variant — used for methodology caveats like "no traffic"
+     rather than positive outcomes like time saved. */
+  .stat .sublbl.muted {
+    color: var(--ink-faint);
+  }
 
   /* Route timeline */
   .timeline {
@@ -1538,7 +1543,7 @@
       <h4>How to get a Google Maps API key</h4>
       <ol>
         <li>Go to <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" rel="noopener">Google Maps Platform</a> and create a project (or pick one you have).</li>
-        <li>Enable both <code>Places API (New)</code> and <code>Maps JavaScript API</code> in the API library.</li>
+        <li>Enable <code>Places API (New)</code>, <code>Maps JavaScript API</code>, and <code>Routes API</code> in the API library. Routes API is what gives you traffic-aware travel times — skip it if you only want better search.</li>
         <li>Under <strong>Credentials</strong>, create an API key.</li>
         <li>Click the key → <strong>Application restrictions</strong> → <strong>Websites</strong> → add your site (<code id="site-url-example">https://yourname.github.io/*</code>). This locks the key to your domain so no one else can use it.</li>
         <li>Paste the key above and hit <strong>Save key</strong>.</li>
@@ -2542,25 +2547,49 @@
     }
   })();
 
-  // ---------- OSRM distance matrix ----------
-  // Uses the public OSRM demo server. For driving only.
-  // For walking/cycling we fall back to straight-line distance with a speed
-  // assumption, which is imperfect but adequate for ordering purposes.
+  // ---------- Travel-time matrix ----------
+  // Priority:
+  //   1. Google Routes computeRouteMatrix (traffic-aware) — if a Google key
+  //      is set and the Routes API is enabled on that key's project.
+  //   2. OSRM public demo server (free-flow, no traffic) — OpenStreetMap-based.
+  //   3. Haversine straight-line with speed assumption — always works, least
+  //      accurate. Used when both above fail, or for walking/cycling.
+  //
+  // The returned object includes `source` so the UI can honestly label the
+  // estimate (e.g. "with typical traffic" vs. "in free-flowing traffic").
   const OSRM = 'https://router.project-osrm.org';
 
   async function getTravelMatrix(points, mode) {
     // points: [{lat, lon}, ...]
     if (mode === 'driving') {
+      // Try Google first — if user has a key, they probably want the most
+      // accurate numbers, and Google's match what Google Maps will show.
+      if (googleSearch.isActive()) {
+        try {
+          const result = await googleRouteMatrix(points);
+          return { ...result, source: 'google-traffic' };
+        } catch (err) {
+          // Config errors (Routes API not enabled, billing, etc.) get surfaced.
+          // Transient errors just fall through to OSRM silently.
+          if (!err.transient) {
+            showError(`Google Routes rejected the request: ${err.message}. Using OpenStreetMap routing for this estimate — travel times may be less accurate.`);
+            console.error('Google Routes config error:', err);
+          } else {
+            console.warn('Google Routes transient error, falling back to OSRM:', err.message);
+          }
+        }
+      }
       try {
-        return await osrmMatrix(points);
+        const result = await osrmMatrix(points);
+        return { ...result, source: 'osrm' };
       } catch (err) {
         console.warn('OSRM failed, falling back to haversine.', err);
-        return haversineMatrix(points, 50); // 50 km/h fallback
+        return { ...haversineMatrix(points, 50), source: 'haversine' };
       }
     }
-    // Walking / cycling: haversine with speed assumption
+    // Walking / cycling: haversine with speed assumption.
     const speed = mode === 'walking' ? 5 : 18; // km/h
-    return haversineMatrix(points, speed);
+    return { ...haversineMatrix(points, speed), source: 'haversine' };
   }
 
   async function osrmMatrix(points) {
@@ -2575,6 +2604,106 @@
       durations: data.durations, // 2D array
       distances: data.distances,
     };
+  }
+
+  // Google Routes computeRouteMatrix with TRAFFIC_AWARE routing preference.
+  // Every point is both an origin and a destination — we need the full n×n
+  // grid because the TSP solver needs every pairwise duration. n=6 stops
+  // with current-location means 7 points = 49 elements (well under the
+  // 625-element Routes API limit).
+  async function googleRouteMatrix(points) {
+    const key = googleSearch.getKey();
+    if (!key) throw Object.assign(new Error('No Google API key configured'), { transient: false });
+
+    const waypoint = p => ({
+      waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lon } } },
+    });
+    const body = {
+      origins: points.map(waypoint),
+      destinations: points.map(waypoint),
+      travelMode: 'DRIVE',
+      routingPreference: 'TRAFFIC_AWARE',
+    };
+
+    let res;
+    try {
+      res = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': key,
+          // Per Google's docs: "It is critical that you include `status` in
+          // your field mask as otherwise all messages will appear to be OK."
+          // Without status, failed elements return with empty fields and
+          // look indistinguishable from a 0-second trip.
+          'X-Goog-FieldMask': 'originIndex,destinationIndex,status,condition,distanceMeters,duration',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (netErr) {
+      throw Object.assign(new Error('Network failure reaching Google Routes: ' + netErr.message), { transient: true });
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      let detail = text.slice(0, 300);
+      try {
+        const j = JSON.parse(text);
+        detail = j.error?.message || detail;
+      } catch (_) {}
+      const err = new Error(`Google Routes error (HTTP ${res.status}): ${detail}`);
+      err.transient = (res.status >= 500);
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    // Response is a JSON array of RouteMatrixElement objects. Each has
+    // originIndex, destinationIndex, status, condition, distanceMeters,
+    // duration. The status object is empty/missing when OK; has a non-zero
+    // `code` when the element failed (e.g. unroutable pair).
+    const elements = Array.isArray(data) ? data : [data];
+    const n = points.length;
+    const durations = Array.from({ length: n }, () => new Array(n).fill(0));
+    const distances = Array.from({ length: n }, () => new Array(n).fill(0));
+    let okCount = 0;
+    for (const el of elements) {
+      const i = el.originIndex;
+      const j = el.destinationIndex;
+      if (typeof i !== 'number' || typeof j !== 'number') continue;
+      if (i === j) continue;
+
+      // Per-element error (status.code non-zero means this specific pair failed).
+      const elStatus = el.status;
+      const elCode = elStatus && typeof elStatus.code === 'number' ? elStatus.code : 0;
+      if (elCode !== 0) {
+        durations[i][j] = Infinity;
+        distances[i][j] = Infinity;
+        continue;
+      }
+      // Condition ROUTE_NOT_FOUND: also unreachable.
+      if (el.condition && el.condition !== 'ROUTE_EXISTS') {
+        durations[i][j] = Infinity;
+        distances[i][j] = Infinity;
+        continue;
+      }
+
+      // duration is a string like "1251s" or "3.5s"; parseFloat handles both.
+      const durStr = el.duration || '0s';
+      const seconds = parseFloat(durStr);
+      durations[i][j] = isFinite(seconds) ? seconds : Infinity;
+      distances[i][j] = typeof el.distanceMeters === 'number' ? el.distanceMeters : 0;
+      okCount++;
+    }
+
+    // Sanity check: we need at least some valid pairs. If every element
+    // failed, throw so the caller falls back to OSRM.
+    // Expected non-diagonal element count is n*(n-1).
+    if (okCount === 0 && n > 1) {
+      throw Object.assign(new Error('Google Routes returned no usable elements'), { transient: true });
+    }
+
+    return { durations, distances };
   }
 
   function haversineMatrix(points, speedKmh) {
@@ -2812,6 +2941,7 @@
     state.lastRoute = {
       order, cost, baselineCost, totalDist,
       points, labels, mode, returnToStart, startMode,
+      matrixSource: matrix.source, // 'google-traffic' | 'osrm' | 'haversine'
     };
 
     renderResult();
@@ -2848,9 +2978,20 @@
       distStr = km >= 10 ? `${km.toFixed(0)}<span class="unit">km</span>` : `${km.toFixed(1)}<span class="unit">km</span>`;
     }
 
-    // Stats
+    // Stats — label the time estimate honestly based on which matrix source
+    // produced it. Google's numbers include traffic (match Google Maps);
+    // OSRM is free-flow only (will underestimate in real traffic); haversine
+    // is a straight-line fallback (very rough).
+    const traffic = r.matrixSource === 'google-traffic';
+    const timeLabel = traffic ? 'Total travel' : 'Est. travel';
+    const timeSub = r.matrixSource === 'google-traffic'
+      ? 'with typical traffic'
+      : r.matrixSource === 'osrm'
+        ? 'no traffic — real time will be longer'
+        : 'rough straight-line estimate';
+
     const stats = [
-      { num: timeStr, lbl: 'Total travel', sub: '' },
+      { num: timeStr, lbl: timeLabel, sub: timeSub, subMuted: true },
       { num: `${r.order.length}<span class="unit">stops</span>`, lbl: 'On your day', sub: '' },
       saved > 0
         ? { num: `<em>−${saved}</em><span class="unit">min</span>`, lbl: 'Time saved vs. your order', sub: savedPct >= 5 ? `${savedPct}% faster` : '' }
@@ -2860,7 +3001,7 @@
       <div class="stat">
         <div class="num">${s.num}</div>
         <div class="lbl">${s.lbl}</div>
-        ${s.sub ? `<div class="sublbl">${s.sub}</div>` : ''}
+        ${s.sub ? `<div class="sublbl${s.subMuted ? ' muted' : ''}">${s.sub}</div>` : ''}
       </div>
     `).join('');
 
