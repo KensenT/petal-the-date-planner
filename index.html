@@ -1594,6 +1594,76 @@
     lastRoute: null,
   };
 
+  // ---------- Persistence ----------
+  // We persist user-authored inputs (stops, mode, options) so that closing
+  // and reopening the tab doesn't wipe an in-progress itinerary. Only the
+  // explicit "Clear all" action resets this. Derived outputs (computed
+  // routes, resolved GPS coords) are NOT persisted — they're recomputed
+  // on demand from the inputs.
+  //
+  // Versioned key: if the persisted shape ever changes incompatibly, bump
+  // the version and old data becomes invisible rather than breaking.
+  const PERSIST_KEY = 'petal:v1:state';
+
+  function persistState() {
+    try {
+      const snapshot = {
+        stops: state.stops,
+        travelMode: travelModeEl ? travelModeEl.value : null,
+        returnToStart: returnStartEl ? returnStartEl.checked : false,
+        startMode: (() => {
+          const checked = document.querySelector('input[name="start-mode"]:checked');
+          return checked ? checked.value : 'first';
+        })(),
+      };
+      localStorage.setItem(PERSIST_KEY, JSON.stringify(snapshot));
+    } catch (_) {
+      // Quota exceeded, storage disabled, etc. — persistence is a nice-to-have,
+      // never block the user on a localStorage failure.
+    }
+  }
+
+  function loadPersistedState() {
+    try {
+      const raw = localStorage.getItem(PERSIST_KEY);
+      if (!raw) return;
+      const snap = JSON.parse(raw);
+      if (!snap || typeof snap !== 'object') return;
+
+      // Restore stops. Tolerate partial data in case the stored shape is
+      // older — we only need the fields that renderStops() consumes.
+      if (Array.isArray(snap.stops)) {
+        state.stops = snap.stops.filter(s =>
+          s && typeof s.name === 'string' &&
+          typeof s.lat === 'number' && typeof s.lon === 'number'
+        );
+      }
+
+      // Restore picker selections if the elements exist and the value is
+      // one of the valid options (defends against stale data from a future
+      // build that deleted a mode).
+      if (travelModeEl && snap.travelMode) {
+        const opt = travelModeEl.querySelector(`option[value="${snap.travelMode}"]`);
+        if (opt && !opt.disabled) {
+          travelModeEl.value = snap.travelMode;
+        }
+      }
+      if (returnStartEl && typeof snap.returnToStart === 'boolean') {
+        returnStartEl.checked = snap.returnToStart;
+      }
+      if (snap.startMode === 'first' || snap.startMode === 'current') {
+        const radio = document.querySelector(`input[name="start-mode"][value="${snap.startMode}"]`);
+        if (radio) radio.checked = true;
+      }
+    } catch (_) {
+      // Parse error or storage error — ignore and start fresh.
+    }
+  }
+
+  function clearPersistedState() {
+    try { localStorage.removeItem(PERSIST_KEY); } catch (_) {}
+  }
+
   // ---------- DOM ----------
   const $ = id => document.getElementById(id);
   const input = $('place-input');
@@ -2355,6 +2425,7 @@
       name, addr, lat, lon, approximate, rawQuery, placeId,
     });
     renderStops();
+    persistState();
     // Hide any previous result since stops have changed
     hideResult();
   }
@@ -2362,6 +2433,7 @@
   function removeStop(id) {
     state.stops = state.stops.filter(s => s.id !== id);
     renderStops();
+    persistState();
     hideResult();
   }
 
@@ -2402,6 +2474,7 @@
     if (confirm('Clear all stops?')) {
       state.stops = [];
       renderStops();
+      clearPersistedState();
       hideResult();
     }
   });
@@ -3290,10 +3363,24 @@
   }
 
   // Initial render
+  // Load persisted state *before* the first render so stops appear without
+  // a flash of empty state. loadPersistedState mutates state.stops and
+  // restores picker/checkbox values; renderStops then paints the result.
+  loadPersistedState();
   renderStops();
   refreshProviderLabel();
   refreshHandoffPhrase();
+
+  // Persist on any user-authored option change. These listeners are purely
+  // for persistence; functional behavior is wired elsewhere (e.g. start-mode
+  // 'current' triggers geolocation separately; travel-mode 'change' refreshes
+  // the footer phrase). We attach after the initial render so restoring from
+  // persistence doesn't accidentally re-save as a side effect.
   travelModeEl.addEventListener('change', refreshHandoffPhrase);
+  travelModeEl.addEventListener('change', persistState);
+  if (returnStartEl) returnStartEl.addEventListener('change', persistState);
+  startModeEls.forEach(el => el.addEventListener('change', persistState));
+
   showAccuracyBannerIfAppropriate();
 
   // Personalize the tutorial's example URL to match the actual deployed site.
