@@ -1531,7 +1531,7 @@
       via <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a>.
       Routing by <a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a>.
     </div>
-    <div><a id="open-settings">⚙ Settings</a> &nbsp;·&nbsp; Hand it off to <em>Google Maps</em> when you're ready to drive.</div>
+    <div><a id="open-settings">⚙ Settings</a> &nbsp;·&nbsp; Hand it off to <em>Google Maps</em> <span id="footer-handoff-phrase">when you're ready to go</span>.</div>
     <div class="footer-copyright">© 2026 Kensen &nbsp;·&nbsp; <a href="https://github.com/KensenT/petal-the-date-planner/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></div>
   </footer>
 
@@ -1836,9 +1836,11 @@
     motorcycleOpt.textContent = active ? 'Motorcycle' : 'Motorcycle (requires Google key)';
     // If the user previously selected motorcycle and then removed their key,
     // bounce the selection back to driving so we don't end up running the
-    // optimizer with an impossible combination.
+    // optimizer with an impossible combination. Programmatic .value changes
+    // don't fire a 'change' event, so downstream listeners need a nudge.
     if (!active && travelModeEl.value === 'motorcycle') {
       travelModeEl.value = 'driving';
+      refreshHandoffPhrase();
     }
   }
 
@@ -3188,6 +3190,22 @@
     return 'Drive';
   }
 
+  // Footer phrase that adapts to the selected travel mode. Keeps the tone
+  // consistent ("when you're ready to ___") while reflecting what the user
+  // is actually about to do.
+  function handoffPhrase(mode) {
+    if (mode === 'walking')    return "when you're ready to walk";
+    if (mode === 'cycling')    return "when you're ready to ride";
+    if (mode === 'motorcycle') return "when you're ready to ride";
+    return "when you're ready to drive";
+  }
+
+  function refreshHandoffPhrase() {
+    const el = document.getElementById('footer-handoff-phrase');
+    if (!el || !travelModeEl) return;
+    el.textContent = handoffPhrase(travelModeEl.value);
+  }
+
   function formatMins(m) {
     if (m < 1) return 'under a minute';
     if (m < 60) return `${m} min`;
@@ -3274,6 +3292,8 @@
   // Initial render
   renderStops();
   refreshProviderLabel();
+  refreshHandoffPhrase();
+  travelModeEl.addEventListener('change', refreshHandoffPhrase);
   showAccuracyBannerIfAppropriate();
 
   // Personalize the tutorial's example URL to match the actual deployed site.
