@@ -10,7 +10,8 @@ Built to solve a real problem: my girlfriend and I would spend ten or fifteen mi
 
 1. Add every place you want to visit, in any order.
 2. Choose your starting point (the first stop you added, or your current location).
-3. Tap *Find the best route*. The app computes travel times between every pair of stops and solves for the shortest total route, then shows the reordered itinerary with a one-tap *Open in Google Maps* button.
+3. Pick a travel mode — driving, motorcycle, walking, or cycling.
+4. Tap *Find the best route*. The app computes travel times between every pair of stops and solves for the shortest total route, then shows the reordered itinerary with a one-tap *Open in Google Maps* button.
 
 Under the hood: the Traveling Salesman Problem is solved optimally via Held-Karp dynamic programming for up to 12 stops, with a nearest-neighbor + 2-opt heuristic as a fallback for larger inputs.
 
@@ -18,8 +19,8 @@ Under the hood: the Traveling Salesman Problem is solved optimally via Held-Karp
 
 Single `index.html`, no build step, no backend. Plain HTML/CSS/JS.
 
-- **Geocoding & place search:** [Photon](https://photon.komoot.io/) (primary) and [Nominatim](https://nominatim.org/) (fallback), both powered by OpenStreetMap data. Optional upgrade to [Google Places](https://developers.google.com/maps/documentation/places/web-service) if the user provides their own API key.
-- **Travel-time matrix:** [OSRM](https://project-osrm.org/) public demo server for driving. Walking and cycling fall back to haversine distance with a speed assumption.
+- **Geocoding & place search:** [Photon](https://photon.komoot.io/) (primary) and [Nominatim](https://nominatim.org/) (fallback), both powered by OpenStreetMap data. Optional upgrade to [Google Places](https://developers.google.com/maps/documentation/places/web-service) when a key is configured.
+- **Travel-time matrix:** [Google Routes API](https://developers.google.com/maps/documentation/routes) (traffic-aware) when a key is set, [OSRM](https://project-osrm.org/) public demo server otherwise. Haversine straight-line distance as a last-resort fallback.
 - **Navigation hand-off:** [Google Maps URLs API](https://developers.google.com/maps/documentation/urls/get-started) — no key required for this part.
 - **Location bias:** browser timezone for country-level filtering; optional precise coordinates if the user grants geolocation.
 
@@ -35,11 +36,28 @@ python3 -m http.server  # or any static server
 
 Or just drop `index.html` on GitHub Pages, Netlify, Cloudflare Pages, or any static host. There's no build step.
 
-### Optional: Google Places API key
+### Optional: Google API key
 
-The default setup uses OpenStreetMap data, which covers most places but has gaps (small businesses in certain regions, for example). Plugging in a Google Maps API key unlocks richer place search and exact pin accuracy when the route opens in Google Maps.
+Petal works out of the box using only open-source data — no account, no key, no setup. But plugging in a Google Maps API key unlocks three meaningful upgrades:
 
-To set one up: open Settings in the app and follow the guide. The key is stored only in your browser's localStorage and is restricted by HTTP referrer to your domain, so it can't be used from anywhere else. A daily quota cap in the Google Cloud Console is a good idea as an extra safety net.
+- **Richer place search and exact pin accuracy.** The Google Places autocomplete covers small businesses that OpenStreetMap misses, and pins land on the actual venue when the route opens in Google Maps.
+- **Traffic-aware travel times.** Time estimates match what Google Maps itself will show you, instead of free-flow times that undercount real driving time by 30–50% in dense cities.
+- **Motorcycle mode.** Google's two-wheeler routing accounts for shortcuts that cars can't take — a real win for anywhere traffic-heavy with motorbike culture. This mode is disabled unless a key is configured, because no open-source routing profile produces sensible two-wheeler results.
+
+To set one up: open Settings in the app and follow the guide. You'll need to enable three APIs on your Google Cloud project — **Places API (New)**, **Maps JavaScript API**, and **Routes API**. The key is stored only in your browser's localStorage and is restricted by HTTP referrer to your domain, so it can't be used from anywhere else.
+
+**Set a daily quota cap in the Google Cloud Console** as an extra safety net — even if somehow your key leaks, the quota cap means the worst-case damage is bounded to whatever you chose.
+
+### Honest labeling
+
+Estimates are always tagged with their data source so you know what you're looking at:
+
+- *with typical traffic* — Google Routes, traffic-aware (matches Google Maps)
+- *Google estimate* — Google Routes for walking or cycling (no traffic concept)
+- *no traffic — real time will be longer* — OSRM free-flow driving
+- *rough straight-line estimate* — haversine fallback when nothing else is available
+
+When Google can't route a mode in your area (e.g. cycling in Jakarta), Petal won't silently fall through to a made-up straight-line estimate — it'll tell you to pick a different mode instead.
 
 ## License
 
