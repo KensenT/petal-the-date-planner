@@ -2613,6 +2613,11 @@
         const trafficAware = mode === 'driving' || mode === 'motorcycle';
         return { ...result, source: trafficAware ? 'google-traffic' : 'google' };
       } catch (err) {
+        // Mode-unsupported-here is a hard no. Don't fall back to haversine —
+        // that would produce a confident-looking number for a route that
+        // physically can't exist per Google's data. Re-throw so the optimize
+        // handler can show an actionable error to the user.
+        if (err.modeUnsupported) throw err;
         if (!err.transient) {
           showError(`Google Routes rejected the request: ${err.message}. Falling back to OpenStreetMap routing — travel times may be less accurate.`);
           console.error('Google Routes config error:', err);
@@ -2735,11 +2740,14 @@
     const durations = Array.from({ length: n }, () => new Array(n).fill(0));
     const distances = Array.from({ length: n }, () => new Array(n).fill(0));
     let okCount = 0;
+    let routeNotFoundCount = 0;
+    let elementSeenCount = 0;
     for (const el of elements) {
       const i = el.originIndex;
       const j = el.destinationIndex;
       if (typeof i !== 'number' || typeof j !== 'number') continue;
       if (i === j) continue;
+      elementSeenCount++;
 
       // Per-element error (status.code non-zero means this specific pair failed).
       const elStatus = el.status;
@@ -2749,10 +2757,13 @@
         distances[i][j] = Infinity;
         continue;
       }
-      // Condition ROUTE_NOT_FOUND: also unreachable.
+      // Condition ROUTE_NOT_FOUND: also unreachable. Track separately so we
+      // can tell the difference between "this mode isn't supported in this
+      // region" (all elements ROUTE_NOT_FOUND) and a transient server issue.
       if (el.condition && el.condition !== 'ROUTE_EXISTS') {
         durations[i][j] = Infinity;
         distances[i][j] = Infinity;
+        if (el.condition === 'ROUTE_NOT_FOUND') routeNotFoundCount++;
         continue;
       }
 
@@ -2764,9 +2775,19 @@
       okCount++;
     }
 
-    // Sanity check: we need at least some valid pairs. If every element
-    // failed, throw so the caller falls back to OSRM.
-    // Expected non-diagonal element count is n*(n-1).
+    // If every element came back ROUTE_NOT_FOUND, Google doesn't have
+    // routing data for this travel mode in this region. This is a definitive
+    // "no" — not a retry-able error — so we mark the error as mode-unsupported
+    // so the caller can surface an honest message instead of falling back to
+    // a made-up haversine estimate.
+    if (okCount === 0 && elementSeenCount > 0 && routeNotFoundCount === elementSeenCount) {
+      throw Object.assign(
+        new Error(`Google has no ${mode} routes in this area.`),
+        { transient: false, modeUnsupported: true }
+      );
+    }
+    // Otherwise: if nothing usable came back but the reason wasn't clean-cut
+    // route-not-found, treat it as transient so OSRM gets a shot.
     if (okCount === 0 && n > 1) {
       throw Object.assign(new Error('Google Routes returned no usable elements'), { transient: true });
     }
@@ -2987,7 +3008,20 @@
     } catch (err) {
       optimizeBtn.classList.remove('working');
       optimizeBtn.innerHTML = 'Find the best route <span class="arrow">→</span>';
-      showError('Could not compute travel times. Please try again.');
+      if (err.modeUnsupported) {
+        // Google returned ROUTE_NOT_FOUND for every pair — the mode genuinely
+        // isn't available in this region. Point the user at modes that are.
+        const prettyMode = mode === 'cycling' ? 'Cycling'
+          : mode === 'walking' ? 'Walking'
+          : mode === 'motorcycle' ? 'Motorcycle'
+          : 'This mode';
+        const alternatives = (mode === 'cycling' || mode === 'walking')
+          ? 'Try Driving or Motorcycle instead.'
+          : 'Try Driving instead.';
+        showError(`${prettyMode} isn't available here — Google Maps has no ${mode} routes for this area. ${alternatives}`);
+      } else {
+        showError('Could not compute travel times. Please try again.');
+      }
       return;
     }
 
