@@ -1050,6 +1050,22 @@
     font-style: italic;
   }
 
+  /* Small note below the Maps link, only shown when a mode-specific caveat
+     applies — e.g. motorcycle mode, which Google Maps URLs don't support
+     so the hand-off opens in driving mode. */
+  .maps-link-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    text-align: center;
+    display: none;
+  }
+  .maps-link-note.shown {
+    display: block;
+  }
+
   /* ===== Errors ===== */
   .error {
     margin-top: 20px;
@@ -1469,6 +1485,7 @@
         Travel by:
         <select id="travel-mode">
           <option value="driving">Driving</option>
+          <option value="motorcycle">Motorcycle</option>
           <option value="walking">Walking</option>
           <option value="cycling">Cycling</option>
         </select>
@@ -1505,6 +1522,7 @@
       </svg>
       <span>Open in Google Maps <em>— turn by turn</em> →</span>
     </a>
+    <div class="maps-link-note" id="maps-link-note"></div>
   </section>
 
   <footer>
@@ -1803,6 +1821,25 @@
     // subtle signal that there's an unused upgrade available.
     const gearBtn = document.getElementById('open-settings-header');
     if (gearBtn) gearBtn.classList.toggle('has-notification', !active);
+    // Motorcycle mode requires Google Routes — there's no sensible
+    // open-source routing profile for two-wheelers that accounts for the
+    // shortcuts Jakarta motorbikes actually take. Disable the option when
+    // no key is configured.
+    refreshMotorcycleAvailability();
+  }
+
+  function refreshMotorcycleAvailability() {
+    const motorcycleOpt = travelModeEl && travelModeEl.querySelector('option[value="motorcycle"]');
+    if (!motorcycleOpt) return;
+    const active = googleSearch.isActive();
+    motorcycleOpt.disabled = !active;
+    motorcycleOpt.textContent = active ? 'Motorcycle' : 'Motorcycle (requires Google key)';
+    // If the user previously selected motorcycle and then removed their key,
+    // bounce the selection back to driving so we don't end up running the
+    // optimizer with an impossible combination.
+    if (!active && travelModeEl.value === 'motorcycle') {
+      travelModeEl.value = 'driving';
+    }
   }
 
   function setSettingsStatus(kind, message) {
@@ -2561,24 +2598,37 @@
 
   async function getTravelMatrix(points, mode) {
     // points: [{lat, lon}, ...]
-    if (mode === 'driving') {
-      // Try Google first — if user has a key, they probably want the most
-      // accurate numbers, and Google's match what Google Maps will show.
-      if (googleSearch.isActive()) {
-        try {
-          const result = await googleRouteMatrix(points);
-          return { ...result, source: 'google-traffic' };
-        } catch (err) {
-          // Config errors (Routes API not enabled, billing, etc.) get surfaced.
-          // Transient errors just fall through to OSRM silently.
-          if (!err.transient) {
-            showError(`Google Routes rejected the request: ${err.message}. Using OpenStreetMap routing for this estimate — travel times may be less accurate.`);
-            console.error('Google Routes config error:', err);
-          } else {
-            console.warn('Google Routes transient error, falling back to OSRM:', err.message);
-          }
+    // mode: 'driving' | 'motorcycle' | 'walking' | 'cycling'
+
+    // For any mode, try Google first when a key is configured. Google has
+    // dedicated routing for each mode (including motorcycle-specific
+    // shortcuts and walking path networks), which is materially better
+    // than our fallbacks. The `source` tag reflects whether traffic data
+    // was used so the UI can label the estimate honestly.
+    if (googleSearch.isActive()) {
+      try {
+        const result = await googleRouteMatrix(points, mode);
+        // Only DRIVE and TWO_WHEELER include traffic; WALK/BICYCLE are
+        // always free-flow because there's no such thing as walking traffic.
+        const trafficAware = mode === 'driving' || mode === 'motorcycle';
+        return { ...result, source: trafficAware ? 'google-traffic' : 'google' };
+      } catch (err) {
+        if (!err.transient) {
+          showError(`Google Routes rejected the request: ${err.message}. Falling back to OpenStreetMap routing — travel times may be less accurate.`);
+          console.error('Google Routes config error:', err);
+        } else {
+          console.warn('Google Routes transient error, falling back:', err.message);
         }
+        // Fall through to non-Google fallback below.
       }
+    }
+
+    // Non-Google fallback by mode. Note: motorcycle has no sensible
+    // open-source routing fallback, so the UI disables that option when no
+    // key is configured — we should never reach this path for motorcycle.
+    // If we somehow do (edge case: key was removed mid-session), treat it
+    // as driving so we at least produce plausible numbers.
+    if (mode === 'driving' || mode === 'motorcycle') {
       try {
         const result = await osrmMatrix(points);
         return { ...result, source: 'osrm' };
@@ -2611,9 +2661,23 @@
   // grid because the TSP solver needs every pairwise duration. n=6 stops
   // with current-location means 7 points = 49 elements (well under the
   // 625-element Routes API limit).
-  async function googleRouteMatrix(points) {
+  //
+  // mode: 'driving' | 'motorcycle' | 'walking' | 'cycling'
+  async function googleRouteMatrix(points, mode) {
     const key = googleSearch.getKey();
     if (!key) throw Object.assign(new Error('No Google API key configured'), { transient: false });
+
+    // Map our mode names to Google's RouteTravelMode enum.
+    const TRAVEL_MODE = {
+      driving: 'DRIVE',
+      motorcycle: 'TWO_WHEELER',
+      walking: 'WALK',
+      cycling: 'BICYCLE',
+    };
+    const travelMode = TRAVEL_MODE[mode];
+    if (!travelMode) {
+      throw Object.assign(new Error(`Unknown travel mode: ${mode}`), { transient: false });
+    }
 
     const waypoint = p => ({
       waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lon } } },
@@ -2621,9 +2685,13 @@
     const body = {
       origins: points.map(waypoint),
       destinations: points.map(waypoint),
-      travelMode: 'DRIVE',
-      routingPreference: 'TRAFFIC_AWARE',
+      travelMode,
     };
+    // routingPreference is only valid for DRIVE and TWO_WHEELER. Per Google's
+    // docs, sending it with WALK or BICYCLE causes the request to fail.
+    if (travelMode === 'DRIVE' || travelMode === 'TWO_WHEELER') {
+      body.routingPreference = 'TRAFFIC_AWARE';
+    }
 
     let res;
     try {
@@ -2941,7 +3009,7 @@
     state.lastRoute = {
       order, cost, baselineCost, totalDist,
       points, labels, mode, returnToStart, startMode,
-      matrixSource: matrix.source, // 'google-traffic' | 'osrm' | 'haversine'
+      matrixSource: matrix.source, // 'google-traffic' | 'google' | 'osrm' | 'haversine'
     };
 
     renderResult();
@@ -2979,16 +3047,17 @@
     }
 
     // Stats — label the time estimate honestly based on which matrix source
-    // produced it. Google's numbers include traffic (match Google Maps);
-    // OSRM is free-flow only (will underestimate in real traffic); haversine
-    // is a straight-line fallback (very rough).
-    const traffic = r.matrixSource === 'google-traffic';
-    const timeLabel = traffic ? 'Total travel' : 'Est. travel';
-    const timeSub = r.matrixSource === 'google-traffic'
-      ? 'with typical traffic'
-      : r.matrixSource === 'osrm'
-        ? 'no traffic — real time will be longer'
-        : 'rough straight-line estimate';
+    // produced it. Drive/motorcycle via Google includes traffic (matches
+    // Google Maps). Walk/bike via Google is accurate but has no traffic
+    // concept. OSRM is free-flow only (underestimates real driving). Haversine
+    // is a rough straight-line fallback.
+    const isTrafficAware = r.matrixSource === 'google-traffic';
+    const timeLabel = (isTrafficAware || r.matrixSource === 'google') ? 'Total travel' : 'Est. travel';
+    const timeSub =
+      r.matrixSource === 'google-traffic' ? 'with typical traffic' :
+      r.matrixSource === 'google'          ? 'Google estimate' :
+      r.matrixSource === 'osrm'            ? 'no traffic — real time will be longer' :
+      /* haversine */                        'rough straight-line estimate';
 
     const stats = [
       { num: timeStr, lbl: timeLabel, sub: timeSub, subMuted: true },
@@ -3042,6 +3111,21 @@
     const mapsUrl = buildGoogleMapsUrl(r);
     mapsLink.href = mapsUrl;
 
+    // Small mode-specific note under the maps link. Motorcycle is the only
+    // case right now: Google Maps URLs API doesn't accept two-wheeler as a
+    // travelmode, so the hand-off opens in Driving mode and the user needs
+    // to tap the motorcycle icon themselves.
+    const note = document.getElementById('maps-link-note');
+    if (note) {
+      if (r.mode === 'motorcycle') {
+        note.textContent = 'Google Maps will open in Driving mode — tap the motorcycle icon at the top to switch.';
+        note.classList.add('shown');
+      } else {
+        note.textContent = '';
+        note.classList.remove('shown');
+      }
+    }
+
     // Subtitle flavor
     if (saved > 0) {
       resultTitle.innerHTML = `Trimmed your route by <em style="color:var(--accent);font-style:italic">${saved} minute${saved===1?'':'s'}</em>.`;
@@ -3064,7 +3148,10 @@
   }
 
   function travelVerb(mode) {
-    return mode === 'walking' ? 'Walk' : mode === 'cycling' ? 'Cycle' : 'Drive';
+    if (mode === 'walking') return 'Walk';
+    if (mode === 'cycling') return 'Cycle';
+    if (mode === 'motorcycle') return 'Ride';
+    return 'Drive';
   }
 
   function formatMins(m) {
@@ -3104,11 +3191,20 @@
     const last = pts[pts.length - 1];
     const middle = pts.slice(1, -1);
 
+    // Google Maps URLs API accepts: driving, walking, bicycling, transit.
+    // Motorcycle isn't a supported URL travelmode — it only exists as a
+    // picker option inside the Google Maps mobile app. Map it to driving
+    // for the hand-off; user can tap the motorcycle icon once Maps opens.
+    const urlTravelMode =
+      r.mode === 'cycling'   ? 'bicycling' :
+      r.mode === 'motorcycle' ? 'driving' :
+      r.mode;
+
     const params = new URLSearchParams({
       api: '1',
       origin: asText(first),
       destination: asText(last),
-      travelmode: r.mode === 'cycling' ? 'bicycling' : r.mode,
+      travelmode: urlTravelMode,
     });
     if (first.placeId) params.set('origin_place_id', first.placeId);
     if (last.placeId) params.set('destination_place_id', last.placeId);
